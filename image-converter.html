@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>이미지 → JPG 변환기</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    background: #f4f6f9;
+    padding: 32px 20px;
+    color: #1f2937;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  .header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  h1 { font-size: 22px; margin: 0; font-weight: 700; }
+  .subtitle { font-size: 13px; color: #6b7280; }
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 22px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.03);
+    margin-bottom: 16px;
+  }
+
+  /* Drop zone */
+  #fileInput {
+    position: absolute;
+    width: 1px; height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .drop {
+    display: block;
+    border: 2px dashed #cbd5e1;
+    border-radius: 10px;
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: #6b7280;
+    background: #fafbfc;
+  }
+  .drop:hover, .drop.dragover {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    color: #3b82f6;
+  }
+  .drop .icon { font-size: 36px; line-height: 1; margin-bottom: 8px; }
+  .drop .main-text { font-size: 15px; margin-bottom: 4px; }
+  .drop .main-text strong { color: #3b82f6; }
+  .drop .hint { font-size: 12px; color: #9ca3af; }
+  .drop .paste-hint {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #9ca3af;
+  }
+  .drop .paste-hint kbd {
+    background: #fff;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px;
+    color: #374151;
+  }
+
+  /* Controls */
+  .row { display: flex; flex-wrap: wrap; gap: 24px; }
+  .col { flex: 1 1 280px; min-width: 0; }
+  .field-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 8px;
+  }
+  .field-label .badge {
+    background: #eff6ff;
+    color: #3b82f6;
+    padding: 2px 10px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+
+  /* Size mode tabs */
+  .mode-tabs {
+    display: inline-flex;
+    background: #f3f4f6;
+    border-radius: 7px;
+    padding: 3px;
+    margin-bottom: 12px;
+  }
+  .mode-tab {
+    border: none;
+    background: transparent;
+    padding: 5px 14px;
+    border-radius: 5px;
+    font-size: 12px;
+    cursor: pointer;
+    color: #6b7280;
+    font-weight: 600;
+  }
+  .mode-tab.active {
+    background: #fff;
+    color: #1f2937;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+
+  .size-panel { display: none; }
+  .size-panel.active { display: block; }
+
+  .size-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .size-btn {
+    padding: 7px 14px;
+    border: 1px solid #d1d5db;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #374151;
+    transition: all 0.1s;
+  }
+  .size-btn:hover { border-color: #9ca3af; }
+  .size-btn.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #fff;
+  }
+  .custom-scale {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .custom-scale input {
+    padding: 7px 28px 7px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 130px;
+  }
+  .custom-scale input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+  .custom-scale .unit {
+    position: absolute;
+    right: 10px;
+    color: #9ca3af;
+    font-size: 13px;
+    pointer-events: none;
+  }
+
+  /* Pixel mode */
+  .pixel-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .pixel-input {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .pixel-input input {
+    padding: 7px 32px 7px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 110px;
+  }
+  .pixel-input input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+  .pixel-input .unit {
+    position: absolute;
+    right: 10px;
+    color: #9ca3af;
+    font-size: 12px;
+    pointer-events: none;
+  }
+  .pixel-x { color: #9ca3af; font-weight: 600; }
+  .pixel-hint { font-size: 11px; color: #9ca3af; margin-top: 6px; line-height: 1.5; }
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 12px;
+    color: #374151;
+    cursor: pointer;
+    user-select: none;
+  }
+  .checkbox-row input { accent-color: #3b82f6; }
+
+  input[type="range"] {
+    width: 100%;
+    accent-color: #3b82f6;
+  }
+  .color-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .color-row input[type="color"] {
+    width: 44px;
+    height: 32px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    cursor: pointer;
+    padding: 2px;
+    background: #fff;
+  }
+  .color-row .color-hex {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 13px;
+    color: #6b7280;
+  }
+
+  /* File list */
+  .file-list { list-style: none; padding: 0; margin: 0; max-height: 320px; overflow-y: auto; }
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    border-bottom: 1px solid #f0f2f5;
+    font-size: 13px;
+  }
+  .file-item:last-child { border-bottom: none; }
+  .thumb {
+    width: 40px; height: 40px;
+    border-radius: 6px;
+    object-fit: cover;
+    background: #f3f4f6;
+    flex-shrink: 0;
+  }
+  .file-info { flex: 1; min-width: 0; }
+  .file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+    color: #1f2937;
+  }
+  .file-meta { font-size: 11px; color: #9ca3af; }
+  .file-status {
+    color: #6b7280;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .file-status.done { color: #10b981; font-weight: 600; }
+  .file-status.error { color: #ef4444; }
+  .file-status.working { color: #3b82f6; }
+  .remove-btn {
+    background: none; border: none; color: #9ca3af;
+    cursor: pointer; font-size: 18px; padding: 0 4px;
+    line-height: 1;
+  }
+  .remove-btn:hover { color: #ef4444; }
+  .list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: #6b7280;
+  }
+
+  /* Actions */
+  .actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  button.primary {
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    padding: 12px 22px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    font-weight: 600;
+    flex: 1;
+    min-width: 200px;
+    transition: background 0.1s;
+  }
+  button.primary:hover:not(:disabled) { background: #2563eb; }
+  button.primary:disabled { background: #cbd5e1; cursor: not-allowed; }
+  button.secondary {
+    background: #fff;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.secondary:hover { background: #f9fafb; }
+
+  /* Progress */
+  .progress-bar {
+    height: 4px;
+    background: #e5e7eb;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 12px;
+    display: none;
+  }
+  .progress-fill {
+    height: 100%;
+    background: #3b82f6;
+    width: 0%;
+    transition: width 0.2s;
+  }
+
+  /* Paste flash */
+  @keyframes paste-flash {
+    0% { background: #fef3c7; }
+    100% { background: #fafbfc; }
+  }
+  .drop.flash { animation: paste-flash 0.6s ease-out; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h1>이미지 → JPG 변환기</h1>
+    <span class="subtitle">브라우저 내에서 처리 · 업로드 없음</span>
+  </div>
+
+  <div class="card">
+    <input type="file" id="fileInput" accept="image/*" multiple>
+    <label for="fileInput" class="drop" id="dropZone">
+      <div class="icon">📁</div>
+      <div class="main-text">여기에 이미지를 끌어다 놓거나 <strong>클릭해서 선택</strong></div>
+      <div class="hint">PNG · WEBP · BMP · GIF · TIFF 등 → JPG</div>
+      <div class="paste-hint"><kbd>Ctrl</kbd> + <kbd>V</kbd> 로 클립보드 이미지 붙여넣기 가능</div>
+    </label>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="col">
+        <div class="field-label">
+          <span>크기</span>
+          <span class="badge" id="sizeBadge">100%</span>
+        </div>
+        <div class="mode-tabs" id="modeTabs">
+          <button class="mode-tab active" data-mode="percent">퍼센트</button>
+          <button class="mode-tab" data-mode="pixel">픽셀</button>
+        </div>
+
+        <div class="size-panel active" id="panelPercent">
+          <div class="size-buttons" id="sizeButtons">
+            <button class="size-btn active" data-scale="100">원본</button>
+            <button class="size-btn" data-scale="50">50%</button>
+            <button class="size-btn" data-scale="150">150%</button>
+            <button class="size-btn" data-scale="200">200%</button>
+            <button class="size-btn" data-scale="300">300%</button>
+          </div>
+          <div class="custom-scale">
+            <input type="number" id="customScale" placeholder="직접 입력" min="1" max="1000">
+            <span class="unit">%</span>
+          </div>
+        </div>
+
+        <div class="size-panel" id="panelPixel">
+          <div class="pixel-row">
+            <div class="pixel-input">
+              <input type="number" id="pixelW" placeholder="가로" min="1" max="20000">
+              <span class="unit">px</span>
+            </div>
+            <span class="pixel-x">×</span>
+            <div class="pixel-input">
+              <input type="number" id="pixelH" placeholder="세로" min="1" max="20000">
+              <span class="unit">px</span>
+            </div>
+          </div>
+          <label class="checkbox-row">
+            <input type="checkbox" id="keepRatio" checked>
+            비율 유지 (한쪽만 입력하면 다른쪽 자동 계산)
+          </label>
+          <div class="pixel-hint" id="pixelHint">가로 또는 세로 중 하나만 입력 시 비율 유지하며 맞춤. 둘 다 입력 시 그 박스에 맞게 축소/확대(비율 유지). 비율 유지 끄면 정확히 그 크기(왜곡 가능).</div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="field-label">
+          <span>JPG 품질</span>
+          <span class="badge" id="qualityVal">90</span>
+        </div>
+        <input type="range" id="quality" min="10" max="100" value="90">
+
+        <div class="field-label" style="margin-top: 18px;">
+          <span>투명 배경색</span>
+        </div>
+        <div class="color-row">
+          <input type="color" id="bgColor" value="#ffffff">
+          <span class="color-hex" id="colorHex">#ffffff</span>
+          <span style="font-size: 12px; color: #9ca3af; margin-left: auto;">PNG 투명영역 채우기</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="fileListCard" style="display: none;">
+    <div class="list-header">
+      <span id="listSummary">파일 0개</span>
+    </div>
+    <ul class="file-list" id="fileList"></ul>
+    <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="convertBtn" disabled>변환 + 다운로드</button>
+    <button class="secondary" id="clearBtn">전체 지우기</button>
+  </div>
+</div>
+
+<script>
+const fileInput = document.getElementById('fileInput');
+const dropZone = document.getElementById('dropZone');
+const fileListEl = document.getElementById('fileList');
+const fileListCard = document.getElementById('fileListCard');
+const listSummary = document.getElementById('listSummary');
+const convertBtn = document.getElementById('convertBtn');
+const clearBtn = document.getElementById('clearBtn');
+const qualityEl = document.getElementById('quality');
+const qualityVal = document.getElementById('qualityVal');
+const bgColorEl = document.getElementById('bgColor');
+const colorHex = document.getElementById('colorHex');
+const customScaleEl = document.getElementById('customScale');
+const sizeButtons = document.getElementById('sizeButtons');
+const sizeBadge = document.getElementById('sizeBadge');
+const progressBar = document.getElementById('progressBar');
+const progressFill = document.getElementById('progressFill');
+const modeTabs = document.getElementById('modeTabs');
+const panelPercent = document.getElementById('panelPercent');
+const panelPixel = document.getElementById('panelPixel');
+const pixelW = document.getElementById('pixelW');
+const pixelH = document.getElementById('pixelH');
+const keepRatio = document.getElementById('keepRatio');
+
+let files = [];
+let scale = 100;
+let sizeMode = 'percent'; // 'percent' | 'pixel'
+let pasteCounter = 0;
+
+qualityEl.addEventListener('input', () => qualityVal.textContent = qualityEl.value);
+bgColorEl.addEventListener('input', () => colorHex.textContent = bgColorEl.value);
+
+function updateBadge() {
+  if (sizeMode === 'percent') {
+    sizeBadge.textContent = scale + '%';
+  } else {
+    const w = pixelW.value || '?';
+    const h = pixelH.value || '?';
+    sizeBadge.textContent = `${w}×${h}`;
+  }
+}
+
+// Mode tabs
+modeTabs.addEventListener('click', (e) => {
+  if (!e.target.classList.contains('mode-tab')) return;
+  document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+  e.target.classList.add('active');
+  sizeMode = e.target.dataset.mode;
+  panelPercent.classList.toggle('active', sizeMode === 'percent');
+  panelPixel.classList.toggle('active', sizeMode === 'pixel');
+  updateBadge();
+});
+
+// Percent buttons
+sizeButtons.addEventListener('click', (e) => {
+  if (!e.target.classList.contains('size-btn')) return;
+  document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
+  e.target.classList.add('active');
+  scale = parseInt(e.target.dataset.scale);
+  customScaleEl.value = '';
+  updateBadge();
+});
+
+customScaleEl.addEventListener('input', () => {
+  const v = parseInt(customScaleEl.value);
+  if (v > 0) {
+    document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
+    scale = v;
+    updateBadge();
+  }
+});
+
+pixelW.addEventListener('input', updateBadge);
+pixelH.addEventListener('input', updateBadge);
+
+// Drag & drop
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  addFiles(Array.from(e.dataTransfer.files));
+});
+fileInput.addEventListener('change', () => {
+  addFiles(Array.from(fileInput.files));
+  fileInput.value = '';
+});
+
+// Clipboard paste
+document.addEventListener('paste', (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  const pasted = [];
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const blob = item.getAsFile();
+      if (blob) {
+        pasteCounter++;
+        const ext = item.type.split('/')[1] || 'png';
+        const ts = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+        const renamed = new File([blob], `clipboard_${ts}_${pasteCounter}.${ext}`, { type: item.type });
+        pasted.push(renamed);
+      }
+    }
+  }
+  if (pasted.length > 0) {
+    e.preventDefault();
+    addFiles(pasted);
+    dropZone.classList.remove('flash');
+    void dropZone.offsetWidth;
+    dropZone.classList.add('flash');
+  }
+});
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + 'B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB';
+  return (bytes / 1024 / 1024).toFixed(2) + 'MB';
+}
+
+function addFiles(newFiles) {
+  const imageFiles = newFiles.filter(f => f.type.startsWith('image/'));
+  files = files.concat(imageFiles);
+  renderFileList();
+}
+
+function renderFileList() {
+  fileListEl.innerHTML = '';
+  if (files.length === 0) {
+    fileListCard.style.display = 'none';
+    convertBtn.disabled = true;
+    convertBtn.textContent = '변환 + 다운로드';
+    return;
+  }
+  fileListCard.style.display = 'block';
+  convertBtn.disabled = false;
+
+  const totalSize = files.reduce((s, f) => s + f.size, 0);
+  listSummary.textContent = `파일 ${files.length}개 · 총 ${formatSize(totalSize)}`;
+  convertBtn.textContent = files.length === 1
+    ? '변환 + 다운로드'
+    : `${files.length}개 변환 + ZIP 다운로드`;
+
+  files.forEach((f, i) => {
+    const li = document.createElement('li');
+    li.className = 'file-item';
+    const url = URL.createObjectURL(f);
+    li.innerHTML = `
+      <img class="thumb" src="${url}" alt="">
+      <div class="file-info">
+        <div class="file-name">${f.name}</div>
+        <div class="file-meta">${formatSize(f.size)}</div>
+      </div>
+      <span class="file-status" id="status-${i}">대기중</span>
+      <button class="remove-btn" data-idx="${i}" title="제거">×</button>
+    `;
+    fileListEl.appendChild(li);
+  });
+  fileListEl.querySelectorAll('.remove-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const idx = parseInt(e.currentTarget.dataset.idx);
+      files.splice(idx, 1);
+      renderFileList();
+    });
+  });
+}
+
+clearBtn.addEventListener('click', () => {
+  files = [];
+  fileInput.value = '';
+  progressBar.style.display = 'none';
+  progressFill.style.width = '0%';
+  renderFileList();
+});
+
+function computeTargetSize(origW, origH) {
+  if (sizeMode === 'percent') {
+    return {
+      w: Math.max(1, Math.round(origW * scale / 100)),
+      h: Math.max(1, Math.round(origH * scale / 100))
+    };
+  }
+  // pixel mode
+  const w = parseInt(pixelW.value) || 0;
+  const h = parseInt(pixelH.value) || 0;
+  const keep = keepRatio.checked;
+
+  if (!w && !h) return { w: origW, h: origH }; // nothing input → original
+  if (!keep) {
+    return { w: w || origW, h: h || origH };
+  }
+  // keep ratio
+  const ratio = origW / origH;
+  if (w && !h) return { w, h: Math.max(1, Math.round(w / ratio)) };
+  if (!w && h) return { w: Math.max(1, Math.round(h * ratio)), h };
+  // both given → fit (contain)
+  const scaleW = w / origW;
+  const scaleH = h / origH;
+  const s = Math.min(scaleW, scaleH);
+  return {
+    w: Math.max(1, Math.round(origW * s)),
+    h: Math.max(1, Math.round(origH * s))
+  };
+}
+
+function convertOne(file, quality, bg) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const { w, h } = computeTargetSize(img.naturalWidth, img.naturalHeight);
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob((blob) => {
+        URL.revokeObjectURL(url);
+        if (!blob) return reject(new Error('변환 실패'));
+        resolve({ blob, w, h });
+      }, 'image/jpeg', quality / 100);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('로드 실패'));
+    };
+    img.src = url;
+  });
+}
+
+function jpgName(name) {
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  return base + '.jpg';
+}
+
+convertBtn.addEventListener('click', async () => {
+  convertBtn.disabled = true;
+  clearBtn.disabled = true;
+  progressBar.style.display = 'block';
+  progressFill.style.width = '0%';
+
+  const q = parseInt(qualityEl.value);
+  const bg = bgColorEl.value;
+  const zip = new JSZip();
+  const results = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const statusEl = document.getElementById(`status-${i}`);
+    statusEl.textContent = '변환중...';
+    statusEl.className = 'file-status working';
+    try {
+      const { blob, w, h } = await convertOne(files[i], q, bg);
+      const name = jpgName(files[i].name);
+      zip.file(name, blob);
+      results.push({ name, blob });
+      statusEl.textContent = `완료 · ${w}×${h} · ${formatSize(blob.size)}`;
+      statusEl.className = 'file-status done';
+    } catch (err) {
+      statusEl.textContent = '실패: ' + err.message;
+      statusEl.className = 'file-status error';
+    }
+    progressFill.style.width = `${((i + 1) / files.length) * 100}%`;
+  }
+
+  if (results.length === 1) {
+    downloadBlob(results[0].blob, results[0].name);
+  } else if (results.length > 1) {
+    const content = await zip.generateAsync({ type: 'blob' });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    downloadBlob(content, `converted_${ts}.zip`);
+  }
+
+  convertBtn.disabled = false;
+  clearBtn.disabled = false;
+});
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+</script>
+</body>
+</html>
